@@ -1,0 +1,68 @@
+@Grab(group='org.apache.commons', module='commons-io', version='1.4')
+@Grab(group='org.apache.commons', module='commons-compress', version='1.21')
+
+import org.apache.commons.io.FileUtils
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
+import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+
+// Define the source and destination
+def source = Paths.get("path/to/source/zip/file.zip")
+def destination = Paths.get("path/to/destination/file.zip")
+
+// Copy the ZIP file from source to destination
+FileUtils.copyFile(source.toFile(), destination.toFile())
+
+// Define the name of the zip file
+def zipFileName = destination.fileName.toString()
+
+// Unzip the file
+def unzipDir = Files.createTempDirectory("unzipped")
+def zipInputStream = new ZipArchiveInputStream(Files.newInputStream(destination))
+ZipArchiveEntry entry
+
+while ((entry = zipInputStream.getNextZipEntry()) != null) {
+    def filePath = unzipDir.resolve(entry.name)
+    if (!entry.isDirectory()) {
+        Files.createDirectories(filePath.parent)
+        Files.copy(zipInputStream, filePath)
+    }
+}
+zipInputStream.close()
+
+// Check and rename the files
+def xmlFile, pdfFile
+Files.walk(unzipDir).forEach { path ->
+    if (Files.isRegularFile(path)) {
+        def fileName = path.fileName.toString()
+        def newFileName = fileName.replaceAll("[\\s+]", "")
+        def newFilePath = path.resolveSibling(newFileName)
+        Files.move(path, newFilePath)
+        if (newFileName.endsWith(".xml")) {
+            xmlFile = newFilePath
+        } else if (newFileName.endsWith(".pdf")) {
+            pdfFile = newFilePath
+        }
+    }
+}
+
+// Rezip the renamed files
+def newZipFile = destination.resolveSibling("new_" + zipFileName)
+def zipOutputStream = new ZipArchiveOutputStream(Files.newOutputStream(newZipFile))
+
+[xmlFile, pdfFile].each { file ->
+    def entry = new ZipArchiveEntry(file.fileName.toString())
+    zipOutputStream.putArchiveEntry(entry)
+    Files.copy(file, zipOutputStream)
+    zipOutputStream.closeArchiveEntry()
+}
+
+zipOutputStream.close()
+
+// Clean up
+FileUtils.deleteDirectory(unzipDir.toFile())
+
+println("New zip file created at: ${newZipFile}")
